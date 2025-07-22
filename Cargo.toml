@@ -3,7 +3,7 @@ name = "eggsh"
 version = "0.1.0"
 edition = "2024"
 description = "yolkiest shell out there"
-readme = "README.md"
-license = "LICENSE.md"
+readme-file = "README.md"
+license-file = "LICENSE.md"
 
 [dependencies]

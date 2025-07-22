@@ -1,5 +1,6 @@
 use std::{
-    io::{self, Write},
+    env,
+    io::{self, Write, pipe},
     process::{Command, Stdio},
 };
 
@@ -89,9 +90,26 @@ fn spawn_command_with_io(
     let program = &command[0];
     let args = &command[1..];
 
-    if program == "exit" || program == "eggxit" {
-        println!("🥚 Cracking out. Goodbye!");
-        std::process::exit(0);
+    match program.as_str() {
+        "exit" | "eggxit" => {
+            println!("🥚 Cracking out. Goodbye!");
+            std::process::exit(0);
+        }
+
+        "cd" => {
+            let new_dir = args.get(0).map(String::as_str).unwrap_or("/");
+            if let Err(e) = env::set_current_dir(new_dir) {
+                return Err(format!("cd: {}: {}", new_dir, e));
+            }
+            return Ok(Command::new("true").spawn().unwrap());
+        }
+
+        "echo" => {
+            let message = args.join(" ") + "\n";
+            return pipe_and_forward(message, stdout);
+        }
+
+        _ => {}
     }
 
     Command::new(program)
@@ -101,4 +119,20 @@ fn spawn_command_with_io(
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| format!("Failed to run '{}': {}", program, e))
+}
+
+fn pipe_and_forward(message: String, stdout: Stdio) -> Result<std::process::Child, String> {
+    let (reader, mut writer) = pipe().map_err(|e| format!("pipe error: {}", e))?;
+
+    std::thread::spawn(move || {
+        let _ = writer.write_all(message.as_bytes());
+        // writer is dropped automatically here
+    });
+
+    Command::new("cat")
+        .stdin(Stdio::from(reader))
+        .stdout(stdout)
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| format!("Failed to forward pipe: {}", e))
 }

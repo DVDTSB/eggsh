@@ -1,6 +1,6 @@
 [package]
 name = "eggsh"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "yolkiest shell out there"
 readme-file = "README.md"

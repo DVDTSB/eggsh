@@ -7,3 +7,4 @@ readme-file = "README.md"
 license-file = "LICENSE.md"
 
 [dependencies]
+crossterm = "0.29.0"

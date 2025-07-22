@@ -1,3 +1,9 @@
+use crossterm::{
+    ExecutableCommand,
+    cursor::MoveToColumn,
+    event::{Event, KeyCode, KeyEvent, KeyModifiers, read},
+    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
+};
 use std::{
     env,
     io::{self, Write, pipe},
@@ -7,15 +13,15 @@ use std::{
 fn main() {
     init_shell();
 
-    loop {
-        print!("egg> ");
-        io::stdout().flush().unwrap();
+    let mut history: Vec<String> = Vec::new();
 
-        let commands = read_input();
+    loop {
+        let commands = read_input(&mut history);
 
         if commands.is_empty() || commands[0].is_empty() {
             continue;
         }
+        println!();
 
         run_pipeline(&commands);
     }
@@ -25,19 +31,132 @@ fn init_shell() {
     println!("🥚 Welcome to eggshell! Type 'eggxit' to escape.");
 }
 
-fn read_input() -> Vec<Vec<String>> {
-    let mut input = String::new();
-
-    if io::stdin().read_line(&mut input).is_err() {
-        eprintln!("Shellshock! Couldn't read input.");
-        return vec![];
-    }
-
+fn read_input(history: &mut Vec<String>) -> Vec<Vec<String>> {
+    let input = read_input_line(
+        format!(
+            "{}>",
+            env::current_dir()
+                .unwrap()
+                .iter()
+                .map(|os_str| os_str.to_str().unwrap())
+                .collect::<Vec<_>>()
+                .iter()
+                .rev()
+                .take(3)
+                .map(|s| *s) // dereference &&str to &str here
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("/")
+        )
+        .to_string(),
+        &history,
+    );
+    history.push(input.clone());
     input
         .trim()
         .split('|')
         .map(|s| s.trim().split_whitespace().map(str::to_string).collect())
         .collect()
+}
+
+pub fn read_input_line(prompt: String, history: &[String]) -> String {
+    let mut buffer = Vec::new();
+    let mut cursor = 0;
+
+    let mut temp_history: Vec<Vec<char>> = history.iter().map(|s| s.chars().collect()).collect();
+    temp_history.push(buffer.clone());
+
+    let mut history_cursor = history.len();
+
+    enable_raw_mode().unwrap();
+    print!("{prompt}");
+    io::stdout().flush().unwrap();
+
+    loop {
+        let event = read().unwrap();
+
+        if let Event::Key(KeyEvent {
+            code, modifiers, ..
+        }) = event
+        {
+            let should_break = match (code, modifiers) {
+                (KeyCode::Char(c), mods) => {
+                    history_cursor = history.len();
+                    let ch = if mods.contains(KeyModifiers::SHIFT) {
+                        c.to_ascii_uppercase()
+                    } else {
+                        c
+                    };
+                    buffer.insert(cursor, ch);
+                    cursor += 1;
+                    false
+                }
+                (KeyCode::Backspace, _) => {
+                    if cursor > 0 {
+                        cursor -= 1;
+                        buffer.remove(cursor);
+                    }
+                    false
+                }
+                (KeyCode::Left, _) => {
+                    if cursor > 0 {
+                        cursor -= 1;
+                    }
+                    false
+                }
+                (KeyCode::Right, _) => {
+                    if cursor < buffer.len() {
+                        cursor += 1;
+                    }
+                    false
+                }
+                (KeyCode::Up, _) => {
+                    if history_cursor > 0 {
+                        if history_cursor == history.len() {
+                            temp_history[history_cursor] = buffer.clone();
+                        }
+                        history_cursor -= 1;
+                        buffer = temp_history[history_cursor].clone();
+                        cursor = buffer.len();
+                    }
+                    false
+                }
+                (KeyCode::Down, _) => {
+                    if history_cursor < history.len() {
+                        history_cursor += 1;
+                        buffer = temp_history[history_cursor].clone();
+                        cursor = buffer.len();
+                    }
+                    false
+                }
+                (KeyCode::Enter | KeyCode::Esc, _) => true,
+                _ => false,
+            };
+
+            if should_break {
+                break;
+            }
+
+            // Redraw line
+            io::stdout()
+                .execute(MoveToColumn(0))
+                .unwrap()
+                .execute(Clear(ClearType::CurrentLine))
+                .unwrap();
+            print!("{prompt}{}", buffer.iter().collect::<String>());
+            io::stdout().flush().unwrap();
+
+            // Move cursor to correct position
+            io::stdout()
+                .execute(MoveToColumn((prompt.len() + cursor) as u16))
+                .unwrap();
+        }
+    }
+
+    disable_raw_mode().unwrap();
+    buffer.into_iter().collect()
 }
 
 fn run_pipeline(commands: &[Vec<String>]) {

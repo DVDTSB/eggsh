@@ -4,9 +4,11 @@ use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers, read},
     terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
+
 use std::{
     env,
     io::{self, Write, pipe},
+    path::Path,
     process::{Command, Stdio},
 };
 
@@ -32,18 +34,27 @@ fn init_shell() {
 }
 
 fn read_input(history: &mut Vec<String>) -> Vec<Vec<String>> {
+    let mut current_dir = env::current_dir().unwrap();
+    let home_dir = dirs::home_dir().unwrap();
+
+    if current_dir.starts_with(home_dir.clone()) {
+        current_dir = Path::new("~/")
+            .join(current_dir.strip_prefix(home_dir).unwrap())
+            .to_path_buf();
+    }
+
     let input = read_input_line(
         format!(
             "{}>",
-            env::current_dir()
-                .unwrap()
+            current_dir
                 .iter()
                 .map(|os_str| os_str.to_str().unwrap())
+                .filter(|s| *s != "/")
                 .collect::<Vec<_>>()
                 .iter()
                 .rev()
                 .take(3)
-                .map(|s| *s) // dereference &&str to &str here
+                .map(|s| *s) // Dereference &&str to &str here
                 .collect::<Vec<_>>()
                 .into_iter()
                 .rev()

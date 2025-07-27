@@ -8,3 +8,4 @@ license-file = "LICENSE.md"
 
 [dependencies]
 crossterm = "0.29.0"
+dirs = "6.0.0"
